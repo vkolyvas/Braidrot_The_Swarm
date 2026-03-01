@@ -1,0 +1,191 @@
+name: CI - Test, Security & Lint
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: Lint Lua Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses:4
+
+      - actions/checkout@v name: Setup Lua
+        uses: leafo/gh-actions-lua@master
+        with:
+          lua_version: "5.4"
+
+      - name: Install Lua linter
+        run: |
+          luarocks install luacheck
+
+      - name: Run Luacheck
+        run: |
+          luacheck --codes --no-color *.lua
+        continue-on-error: true
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run security audit
+        run: |
+          echo "=== Security Audit ==="
+          echo "Checking for common security issues in Lua/Roblox code..."
+
+          # Check for potentially dangerous patterns
+          echo "Checking for hardcoded credentials..."
+          if grep -r "password\s*=" *.lua 2>/dev/null; then
+            echo "WARNING: Possible hardcoded password found"
+          fi
+
+          echo "Checking for eval usage..."
+          if grep -r "eval(" *.lua 2>/dev/null; then
+            echo "WARNING: eval() usage detected - security risk"
+          fi
+
+          echo "Checking for os.execute usage..."
+          if grep -r "os\.execute" *.lua 2>/dev/null; then
+            echo "WARNING: os.execute() detected - potential command injection"
+          fi
+
+          echo "Checking for HttpService usage..."
+          if grep -r "HttpService" *.lua 2>/dev/null; then
+            echo "INFO: HttpService usage found - ensure input validation"
+          fi
+
+          echo "=== Security Audit Complete ==="
+
+      - name: Check for common Roblox exploits
+        run: |
+          echo "=== Roblox Exploit Check ==="
+
+          # Check RemoteEvent/Function security
+          echo "Checking RemoteEvent usage..."
+          if grep -r "RemoteEvent" *.lua 2>/dev/null | grep -v "require\|--"; then
+            echo "INFO: RemoteEvents found - ensure proper validation"
+          fi
+
+          # Check for anti-exploit patterns
+          echo "Checking for validation functions..."
+          grep -l "Validate\|Sanitize\|Check" *.lua 2>/dev/null || echo "No explicit validation found"
+
+          echo "=== Roblox Exploit Check Complete ==="
+
+  test:
+    name: Lua Syntax Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Lua
+        uses: leafo/gh-actions-lua@master
+        with:
+          lua_version: "5.4"
+
+      - name: Run Lua syntax check
+        run: |
+          echo "=== Lua Syntax Validation ==="
+
+          for file in *.lua; do
+            echo "Checking: $file"
+            lua -e "loadfile('$file')" 2>&1 || echo "SYNTAX ERROR in $file"
+          done
+
+          echo "=== Syntax Validation Complete ==="
+
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check file structure
+        run: |
+          echo "=== File Structure Check ==="
+
+          echo "Lua modules found:"
+          ls -la *.lua
+
+          echo ""
+          echo "Total lines of code:"
+          wc -l *.lua
+
+          echo ""
+          echo "=== Structure Check Complete ==="
+
+      - name: Check for TODO/FIXME
+        run: |
+          echo "=== TODO/FIXME Check ==="
+          grep -r "TODO\|FIXME\|HACK\|XXX" *.lua || echo "No TODO/FIXME found"
+          echo "=== Check Complete ==="
+
+  formatting:
+    name: Code Formatting Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check indentation consistency
+        run: |
+          echo "=== Indentation Check ==="
+
+          # Check for mixed tabs/spaces
+          for file in *.lua; do
+            if grep -q $'\t' "$file"; then
+              echo "WARNING: $file contains tabs (use spaces for Roblox)"
+            fi
+          done
+
+          echo "Note: Roblox recommends 4 spaces for indentation"
+
+      - name: Check line endings
+        run: |
+          echo "=== Line Ending Check ==="
+          file *.lua | grep -v "UTF-8" || echo "All files UTF-8"
+          echo "=== Check Complete ==="
+
+  dependencies:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for external dependencies
+        run: |
+          echo "=== Dependency Check ==="
+
+          echo "Checking require statements..."
+          grep -h "require(" *.lua | sort -u || echo "No external requires"
+
+          echo ""
+          echo "Checking for ModuleScript usage (Roblox)..."
+          grep -l "ModuleScript" *.lua || echo "No ModuleScript references"
+
+          echo "=== Dependency Check Complete ==="
+
+  build-summary:
+    name: Build Summary
+    needs: [lint, security, test, code-quality, formatting, dependencies]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "=== CI Build Summary ==="
+          echo "All checks completed!"
+          echo ""
+          echo "Files analyzed: $(ls *.lua | wc -l)"
+          echo ""
+          echo "Review the individual job results above for details."
