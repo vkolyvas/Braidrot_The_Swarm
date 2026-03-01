@@ -1,0 +1,7 @@
+# Ignore renders folder (large image files)
+renders/
+
+# Roblox specific
+*.rbxm
+*.rbxl
+*.lock
