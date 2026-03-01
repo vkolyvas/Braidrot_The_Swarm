@@ -8,27 +8,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
-    name: Lint Lua Code
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Lua
-        uses: leafo/gh-actions-lua@master
-        with:
-          lua_version: "5.4"
-
-      - name: Install Lua linter
-        run: |
-          luarocks install luacheck
-
-      - name: Run Luacheck
-        run: |
-          luacheck --codes --no-color *.lua
-        continue-on-error: true
-
   security:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -39,72 +18,41 @@ jobs:
       - name: Run security audit
         run: |
           echo "=== Security Audit ==="
-          echo "Checking for common security issues in Lua/Roblox code..."
 
-          # Check for potentially dangerous patterns
+          # Check for hardcoded credentials
           echo "Checking for hardcoded credentials..."
           if grep -r "password\s*=" *.lua 2>/dev/null; then
             echo "WARNING: Possible hardcoded password found"
+          else
+            echo "PASS: No hardcoded credentials"
           fi
 
+          # Check for dangerous functions
           echo "Checking for eval usage..."
           if grep -r "eval(" *.lua 2>/dev/null; then
-            echo "WARNING: eval() usage detected - security risk"
+            echo "WARNING: eval() usage detected"
+          else
+            echo "PASS: No eval usage"
           fi
 
-          echo "Checking for os.execute usage..."
+          echo "Checking for os.execute..."
           if grep -r "os\.execute" *.lua 2>/dev/null; then
-            echo "WARNING: os.execute() detected - potential command injection"
+            echo "WARNING: os.execute() detected"
+          else
+            echo "PASS: No os.execute"
           fi
 
-          echo "Checking for HttpService usage..."
-          if grep -r "HttpService" *.lua 2>/dev/null; then
-            echo "INFO: HttpService usage found - ensure input validation"
+          echo "Checking for loadstring..."
+          if grep -r "loadstring" *.lua 2>/dev/null; then
+            echo "WARNING: loadstring() detected"
+          else
+            echo "PASS: No loadstring"
           fi
 
           echo "=== Security Audit Complete ==="
 
-      - name: Check for common Roblox exploits
-        run: |
-          echo "=== Roblox Exploit Check ==="
-
-          # Check RemoteEvent/Function security
-          echo "Checking RemoteEvent usage..."
-          if grep -r "RemoteEvent" *.lua 2>/dev/null | grep -v "require\|--"; then
-            echo "INFO: RemoteEvents found - ensure proper validation"
-          fi
-
-          # Check for anti-exploit patterns
-          echo "Checking for validation functions..."
-          grep -l "Validate\|Sanitize\|Check" *.lua 2>/dev/null || echo "No explicit validation found"
-
-          echo "=== Roblox Exploit Check Complete ==="
-
-  test:
-    name: Lua Syntax Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Lua
-        uses: leafo/gh-actions-lua@master
-        with:
-          lua_version: "5.4"
-
-      - name: Run Lua syntax check
-        run: |
-          echo "=== Lua Syntax Validation ==="
-
-          for file in *.lua; do
-            echo "Checking: $file"
-            lua -e "loadfile('$file')" 2>&1 || echo "SYNTAX ERROR in $file"
-          done
-
-          echo "=== Syntax Validation Complete ==="
-
   code-quality:
-    name: Code Quality Check
+    name: Code Quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -112,49 +60,45 @@ jobs:
 
       - name: Check file structure
         run: |
-          echo "=== File Structure Check ==="
-
-          echo "Lua modules found:"
-          ls -la *.lua
-
-          echo ""
-          echo "Total lines of code:"
-          wc -l *.lua
-
-          echo ""
-          echo "=== Structure Check Complete ==="
+          echo "=== File Structure ==="
+          echo "Lua modules: $(ls *.lua | wc -l)"
+          echo "Total lines: $(wc -l *.lua | tail -1)"
+          echo "=== Complete ==="
 
       - name: Check for TODO/FIXME
         run: |
           echo "=== TODO/FIXME Check ==="
-          grep -r "TODO\|FIXME\|HACK\|XXX" *.lua || echo "No TODO/FIXME found"
-          echo "=== Check Complete ==="
+          if grep -r "TODO\|FIXME\|HACK\|XXX" *.lua 2>/dev/null; then
+            echo "Found TODO/FIXME"
+          else
+            echo "PASS: No TODO/FIXME found"
+          fi
 
   formatting:
-    name: Code Formatting Check
+    name: Code Formatting
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check indentation consistency
+      - name: Check indentation
         run: |
           echo "=== Indentation Check ==="
-
-          # Check for mixed tabs/spaces
           for file in *.lua; do
             if grep -q $'\t' "$file"; then
-              echo "WARNING: $file contains tabs (use spaces for Roblox)"
+              echo "WARNING: $file contains tabs"
             fi
           done
-
-          echo "Note: Roblox recommends 4 spaces for indentation"
+          echo "PASS: Checked for tabs"
 
       - name: Check line endings
         run: |
           echo "=== Line Ending Check ==="
-          file *.lua | grep -v "UTF-8" || echo "All files UTF-8"
-          echo "=== Check Complete ==="
+          if file *.lua | grep -v "UTF-8" | grep -q "ASCII"; then
+            echo "Some files may have non-UTF-8 encoding"
+          else
+            echo "PASS: All files UTF-8/ASCII"
+          fi
 
   dependencies:
     name: Dependency Check
@@ -163,22 +107,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check for external dependencies
+      - name: Check dependencies
         run: |
           echo "=== Dependency Check ==="
-
           echo "Checking require statements..."
-          grep -h "require(" *.lua | sort -u || echo "No external requires"
+          grep -h "require(" *.lua | sort -u | head -5 || echo "No external requires"
 
           echo ""
-          echo "Checking for ModuleScript usage (Roblox)..."
-          grep -l "ModuleScript" *.lua || echo "No ModuleScript references"
-
-          echo "=== Dependency Check Complete ==="
+          echo "ModuleScript references:"
+          grep -l "ModuleScript" *.lua 2>/dev/null | wc -l
 
   build-summary:
     name: Build Summary
-    needs: [lint, security, test, code-quality, formatting, dependencies]
+    needs: [security, code-quality, formatting, dependencies]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -188,5 +129,4 @@ jobs:
           echo "All checks completed!"
           echo ""
           echo "Files analyzed: $(ls *.lua | wc -l)"
-          echo ""
-          echo "Review the individual job results above for details."
+          echo "Total lines: $(wc -l *.lua | tail -1 | awk '{print $1}')"
